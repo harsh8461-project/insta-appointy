@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -35,14 +35,6 @@ type Post struct {
 	Caption         string             `json:"caption,omitempty" bson:"caption,omitempty"`
 	ImageURL        string             `json:"imageURL,omitempty" bson:"imageURL,omitempty"`
 	PostedTimestamp string             `json:"timestamp,omitempty" bson:"timestamp,omitempty"`
-}
-
-func homePage(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("method:", r.Method)
-	if r.Method == http.MethodGet {
-		t, _ := template.ParseFiles("index.html")
-		t.Execute(w, nil)
-	}
 }
 
 //Function which gives the API Endpoint for Adding New Users <POST REQUEST>
@@ -145,10 +137,23 @@ func Postinfo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-//Function which gives API Endpoint for Getting All Posts by a particular User <GET REQUEST>
+//Function which gives API Endpoint for Getting All Posts by a particular User <GET REQUEST> with pagination implimentation
 func AllPost(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("method:", r.Method)
 	if r.Method == http.MethodGet {
+		q, ok := r.URL.Query()["p"]
+		var q1 int64 = 1
+		if !ok || len(q[0]) < 1 {
+			log.Println("Url Param 'p' is missing")
+		} else {
+			pp, _ := strconv.Atoi(q[0])
+			q1 = int64(pp)
+		}
+		var perPage int64 = 4 //4 data per page
+		findOptions := options.Find()
+		findOptions.SetLimit(perPage)
+		findOptions.SetSkip((int64(q1) - 1) * perPage)
+
 		var myExp = regexp.MustCompile(`/posts/users/(?P<id>[a-zA-Z0-9_]+)`)
 		match := myExp.FindStringSubmatch(r.URL.Path)
 		result := make(map[string]string)
@@ -162,7 +167,7 @@ func AllPost(w http.ResponseWriter, r *http.Request) {
 		var posts []Post
 		collection := client.Database("Mern").Collection("posts")
 		ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-		cursor, err := collection.Find(ctx, Post{Uid: key})
+		cursor, err := collection.Find(ctx, Post{Uid: key}, findOptions)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"message": "` + err.Error() + `"}`))
@@ -187,7 +192,6 @@ func AllPost(w http.ResponseWriter, r *http.Request) {
 func handleRequests() {
 
 	fmt.Println("After DB")
-	http.HandleFunc("/", homePage)
 	http.HandleFunc("/users", addUsers)
 	http.HandleFunc("/users/", Userinfo)
 	http.HandleFunc("/posts", addPosts)
